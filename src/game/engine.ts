@@ -48,10 +48,10 @@ export class GameEngine {
       this.spawnRandomFood();
     }
 
-    // 2. Spawn Scattered Battle Remnants (Loot clusters around the map so the arena feels actively underway!)
+    // 2. Spawn Scattered Battle Remnants (simulating prior combats so the arena feels actively ongoing)
     for (let cluster = 0; cluster < 8; cluster++) {
-      const cx = 200 + Math.random() * (ARENA_CONFIG.MAP_SIZE - 400);
-      const cy = 200 + Math.random() * (ARENA_CONFIG.MAP_SIZE - 400);
+      const cx = 250 + Math.random() * (ARENA_CONFIG.MAP_SIZE - 500);
+      const cy = 250 + Math.random() * (ARENA_CONFIG.MAP_SIZE - 500);
       const orbCount = Math.floor(10 + Math.random() * 15);
       for (let j = 0; j < orbCount; j++) {
         const ox = cx + (Math.random() - 0.5) * 160;
@@ -60,11 +60,11 @@ export class GameEngine {
       }
     }
 
-    // 3. Spawn Player (Fresh start with comfortable length)
+    // 3. Spawn Player at fresh initial length
     this.playerSnakeId = 1;
     this.spawnSnake(this.playerSnakeId, playerName, false, playerSkin, ARENA_CONFIG.INITIAL_LENGTH);
 
-    // 4. Spawn Tiered Bots (So the game feels already on with giants, veterans, and small snakes!)
+    // 4. Populate Initial Arena with Tiered Snakes (giants, veterans, medium)
     const botCount = ARENA_CONFIG.BOT_COUNT;
     const skinKeys = Object.keys(SKINS);
 
@@ -74,17 +74,17 @@ export class GameEngine {
 
       let botLength: number;
       if (i < 3) {
-        // 3 Giants / Arena Bosses (Top of leaderboard)
-        botLength = Math.floor(260 + Math.random() * 180); // 260 - 440
-      } else if (i < 10) {
-        // 7 Large Veterans
-        botLength = Math.floor(110 + Math.random() * 130); // 110 - 240
-      } else if (i < 20) {
-        // 10 Medium Snakes
-        botLength = Math.floor(45 + Math.random() * 55);   // 45 - 100
+        // 3 Giants / Arena Bosses
+        botLength = Math.floor(260 + Math.random() * 160);
+      } else if (i < 9) {
+        // 6 Large Veterans
+        botLength = Math.floor(110 + Math.random() * 120);
+      } else if (i < 18) {
+        // 9 Medium Snakes
+        botLength = Math.floor(45 + Math.random() * 55);
       } else {
-        // Standard / Smaller snakes
-        botLength = Math.floor(22 + Math.random() * 20);   // 22 - 42
+        // Standard initial snakes
+        botLength = ARENA_CONFIG.INITIAL_LENGTH;
       }
 
       this.spawnSnake(this.nextId++, name, true, skin, botLength);
@@ -101,24 +101,47 @@ export class GameEngine {
     skinId: string,
     initialLength: number = ARENA_CONFIG.INITIAL_LENGTH
   ): Snake {
-    const margin = 250;
-    const x = margin + Math.random() * (ARENA_CONFIG.MAP_SIZE - margin * 2);
-    const y = margin + Math.random() * (ARENA_CONFIG.MAP_SIZE - margin * 2);
-    const angle = Math.random() * Math.PI * 2;
+    const margin = 280;
+    let spawnX = margin + Math.random() * (ARENA_CONFIG.MAP_SIZE - margin * 2);
+    let spawnY = margin + Math.random() * (ARENA_CONFIG.MAP_SIZE - margin * 2);
 
+    // If live snakes exist, pick a spawn point safely away from other heads (especially the player!)
+    if (this.snakes.size > 0) {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const testX = margin + Math.random() * (ARENA_CONFIG.MAP_SIZE - margin * 2);
+        const testY = margin + Math.random() * (ARENA_CONFIG.MAP_SIZE - margin * 2);
+        let tooClose = false;
+
+        for (const s of this.snakes.values()) {
+          if (!s.isAlive) continue;
+          const distSq = (s.head.x - testX) ** 2 + (s.head.y - testY) ** 2;
+          if (distSq < 320 * 320) {
+            tooClose = true;
+            break;
+          }
+        }
+
+        if (!tooClose) {
+          spawnX = testX;
+          spawnY = testY;
+          break;
+        }
+      }
+    }
+
+    const angle = Math.random() * Math.PI * 2;
     const segments: SnakeSegment[] = [];
     const spacing = ARENA_CONFIG.SEGMENT_SPACING;
 
-    // Generate snake body with natural curve
-    let curX = x;
-    let curY = y;
+    let curX = spawnX;
+    let curY = spawnY;
     let curAngle = angle;
 
     for (let i = 0; i < initialLength; i++) {
       segments.push({ x: curX, y: curY });
       curX -= Math.cos(curAngle) * spacing;
       curY -= Math.sin(curAngle) * spacing;
-      curAngle += (Math.random() - 0.5) * 0.05; // slight natural curvature
+      curAngle += (Math.random() - 0.5) * 0.04;
     }
 
     const snake: Snake = {
@@ -126,7 +149,7 @@ export class GameEngine {
       name,
       isBot,
       skinId,
-      head: { x, y },
+      head: { x: spawnX, y: spawnY },
       angle,
       targetAngle: angle,
       speed: ARENA_CONFIG.BASE_SPEED,
@@ -154,13 +177,11 @@ export class GameEngine {
     if (!player || !player.isAlive) return;
 
     player.targetAngle = targetAngle;
-    
-    // Boosting is permitted as long as length > MIN_BOOST_LENGTH (12)
     const canBoost = boost && player.length > ARENA_CONFIG.MIN_BOOST_LENGTH;
     player.isBoosting = canBoost;
 
     if (canBoost) {
-      player.invulnerableUntil = 0; // PRD §6.6: Boost cancels invulnerability
+      player.invulnerableUntil = 0;
     }
   }
 
@@ -211,7 +232,7 @@ export class GameEngine {
       snake.head.x += Math.cos(snake.angle) * snake.speed * dt;
       snake.head.y += Math.sin(snake.angle) * snake.speed * dt;
 
-      // Wall Collision (PRD §6.6: Wall = death, no wraparound)
+      // Wall Collision (Wall = death, no wraparound)
       if (
         snake.head.x < 0 ||
         snake.head.x > ARENA_CONFIG.MAP_SIZE ||
@@ -232,7 +253,8 @@ export class GameEngine {
     // 2. Collisions
     this.checkSnakeCollisions(now);
 
-    // 3. Maintain Bot Population with varied sizes
+    // 3. Maintain Bot Population
+    // FIXED: Mid-game respawns ALWAYS spawn at baby/initial size (ARENA_CONFIG.INITIAL_LENGTH)!
     let liveBots = 0;
     for (const s of this.snakes.values()) {
       if (s.isBot && s.isAlive) liveBots++;
@@ -241,9 +263,8 @@ export class GameEngine {
       const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
       const skinKeys = Object.keys(SKINS);
       const skin = skinKeys[Math.floor(Math.random() * skinKeys.length)];
-      // Varied respawn length so new bots aren't all small
-      const respawnLength = Math.floor(30 + Math.random() * 90);
-      this.spawnSnake(this.nextId++, name, true, skin, respawnLength);
+      // Fresh baby snake spawn: must eat to grow!
+      this.spawnSnake(this.nextId++, name, true, skin, ARENA_CONFIG.INITIAL_LENGTH);
     }
 
     // 4. Replenish Food
@@ -280,13 +301,11 @@ export class GameEngine {
       prev = current;
     }
 
-    // Grow smoothly
     while (newSegments.length < requiredSegments) {
       const last = newSegments[newSegments.length - 1];
       newSegments.push({ x: last.x, y: last.y });
     }
 
-    // Truncate if shrank from boost
     if (newSegments.length > requiredSegments) {
       newSegments.length = requiredSegments;
     }
@@ -426,62 +445,156 @@ export class GameEngine {
     }
   }
 
+  /**
+   * SMART SLITHER-GRADE BOT AI
+   * 1. Multi-whisker collision anticipation (detects bodies and walls before hitting)
+   * 2. Predatory intercept: actively cuts off smaller snakes with boost
+   * 3. Defensive retreat: turns away and boosts to escape larger oncoming snakes
+   * 4. Loot rush: swarms toward clusters of gold orbs dropped from dead snakes
+   */
   private updateBotAI(bot: Snake, dt: number, now: number) {
     bot.aiTimer += dt;
-    if (bot.aiTimer < 0.15) return;
+    if (bot.aiTimer < 0.08) return; // ~12 Hz decision evaluation for quick reflexes
     bot.aiTimer = 0;
 
     const head = bot.head;
-    const margin = 200;
+    const mapSize = ARENA_CONFIG.MAP_SIZE;
+    const botRadius = this.getSnakeRadius(bot.length);
+    const wallMargin = 180;
 
-    // 1. Boundary Avoidance
-    if (
-      head.x < margin ||
-      head.x > ARENA_CONFIG.MAP_SIZE - margin ||
-      head.y < margin ||
-      head.y > ARENA_CONFIG.MAP_SIZE - margin
-    ) {
-      const centerAngle = Math.atan2(
-        ARENA_CONFIG.MAP_SIZE / 2 - head.y,
-        ARENA_CONFIG.MAP_SIZE / 2 - head.x
-      );
-      bot.targetAngle = centerAngle;
-      bot.isBoosting = false;
-      return;
-    }
+    // ==========================================
+    // SENSOR RAYS: Center, Left, Right, Far Left, Far Right
+    // ==========================================
+    const lookDist = bot.isBoosting ? 180 : 120;
+    const rayAngles = [
+      0,           // Center
+      -0.45,       // Left mid
+      0.45,        // Right mid
+      -0.95,       // Left wide
+      0.95,        // Right wide
+    ];
 
-    // 2. Obstacle / Snake Avoidance (look ahead)
-    const lookAheadDist = bot.isBoosting ? 160 : 100;
-    const probeX = head.x + Math.cos(bot.angle) * lookAheadDist;
-    const probeY = head.y + Math.sin(bot.angle) * lookAheadDist;
+    let leftThreatScore = 0;
+    let rightThreatScore = 0;
+    let centerBlocked = false;
 
-    let obstacleDetected = false;
-    let steerAwayAngle = bot.angle;
+    for (let r = 0; r < rayAngles.length; r++) {
+      const rayAngle = bot.angle + rayAngles[r];
+      const probeX = head.x + Math.cos(rayAngle) * lookDist;
+      const probeY = head.y + Math.sin(rayAngle) * lookDist;
 
-    for (const other of this.snakes.values()) {
-      if (!other.isAlive || other.id === bot.id) continue;
-      const otherRadius = this.getSnakeRadius(other.length);
+      // Check ray against map wall
+      let rayHit = false;
+      let hitWeight = 1.0;
 
-      for (const seg of other.segments) {
-        const dSq = (probeX - seg.x) ** 2 + (probeY - seg.y) ** 2;
-        if (dSq < (otherRadius + 40) ** 2) {
-          obstacleDetected = true;
-          steerAwayAngle = bot.angle + (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 2);
-          break;
+      if (
+        probeX < wallMargin ||
+        probeX > mapSize - wallMargin ||
+        probeY < wallMargin ||
+        probeY > mapSize - wallMargin
+      ) {
+        rayHit = true;
+        hitWeight = 2.0; // Wall is highest threat
+      }
+
+      // Check ray against other snakes' bodies
+      if (!rayHit) {
+        for (const other of this.snakes.values()) {
+          if (!other.isAlive || other.id === bot.id) continue;
+          const otherRadius = this.getSnakeRadius(other.length);
+          const safeDistSq = (otherRadius + botRadius + 22) ** 2;
+
+          for (let s = 1; s < other.segments.length; s += 2) {
+            const seg = other.segments[s];
+            const dSq = (probeX - seg.x) ** 2 + (probeY - seg.y) ** 2;
+            if (dSq < safeDistSq) {
+              rayHit = true;
+              break;
+            }
+          }
+          if (rayHit) break;
         }
       }
-      if (obstacleDetected) break;
+
+      if (rayHit) {
+        if (r === 0) {
+          centerBlocked = true;
+          leftThreatScore += 1.5 * hitWeight;
+          rightThreatScore += 1.5 * hitWeight;
+        } else if (r === 1 || r === 3) {
+          leftThreatScore += hitWeight * (r === 1 ? 2.0 : 1.0);
+        } else if (r === 2 || r === 4) {
+          rightThreatScore += hitWeight * (r === 2 ? 2.0 : 1.0);
+        }
+      }
     }
 
-    if (obstacleDetected) {
-      bot.targetAngle = steerAwayAngle;
+    // ==========================================
+    // 1. EMERGENCY THREAT AVOIDANCE (WALLS & BODIES)
+    // ==========================================
+    if (centerBlocked || leftThreatScore > 0 || rightThreatScore > 0) {
+      if (leftThreatScore > rightThreatScore) {
+        // Obstacle on left -> turn right
+        bot.targetAngle = bot.angle + 1.3;
+      } else {
+        // Obstacle on right -> turn left
+        bot.targetAngle = bot.angle - 1.3;
+      }
       bot.isBoosting = false;
       return;
     }
 
-    // 3. Search for nearby food (prioritizing loot orbs)
+    // ==========================================
+    // 2. DEFENSIVE RETREAT (Avoid Larger Snakes charging at us)
+    // ==========================================
+    for (const other of this.snakes.values()) {
+      if (!other.isAlive || other.id === bot.id) continue;
+      if (other.length > bot.length * 1.15) {
+        const dSq = (head.x - other.head.x) ** 2 + (head.y - other.head.y) ** 2;
+        if (dSq < 220 * 220) {
+          // Larger snake is close! Steer directly away from their head
+          const fleeAngle = Math.atan2(head.y - other.head.y, head.x - other.head.x);
+          bot.targetAngle = fleeAngle;
+          bot.isBoosting = bot.length > 20; // Boost to escape!
+          return;
+        }
+      }
+    }
+
+    // ==========================================
+    // 3. PREDATORY CUT-OFF (Hunting smaller or equal snakes)
+    // ==========================================
+    if (bot.length > 35) {
+      let bestTarget: Snake | null = null;
+      let minTargetDistSq = 280 * 280;
+
+      for (const other of this.snakes.values()) {
+        if (!other.isAlive || other.id === bot.id) continue;
+        if (bot.length > other.length * 1.1) {
+          const dSq = (head.x - other.head.x) ** 2 + (head.y - other.head.y) ** 2;
+          if (dSq < minTargetDistSq) {
+            minTargetDistSq = dSq;
+            bestTarget = other;
+          }
+        }
+      }
+
+      if (bestTarget) {
+        // Predict victim's forward position to cut across their path
+        const leadDist = 75;
+        const targetLeadX = bestTarget.head.x + Math.cos(bestTarget.angle) * leadDist;
+        const targetLeadY = bestTarget.head.y + Math.sin(bestTarget.angle) * leadDist;
+        bot.targetAngle = Math.atan2(targetLeadY - head.y, targetLeadX - head.x);
+        bot.isBoosting = true; // Sprint to cut them off!
+        return;
+      }
+    }
+
+    // ==========================================
+    // 4. LOOT RUSH (Feast on gold loot from fallen snakes)
+    // ==========================================
     let nearestFood: FoodPellet | null = null;
-    let minFoodDistSq = 320 ** 2;
+    let minFoodDistSq = 380 * 380;
 
     const cellX = Math.floor(head.x / this.cellSize);
     const cellY = Math.floor(head.y / this.cellSize);
@@ -495,8 +608,8 @@ export class GameEngine {
           const f = this.foods.get(fid);
           if (!f) continue;
           const dSq = (head.x - f.x) ** 2 + (head.y - f.y) ** 2;
-          // Loot orbs are given higher priority by artificially reducing their effective distance
-          const effectiveDistSq = f.isLoot ? dSq * 0.4 : dSq;
+          // Heavily bias toward gold loot
+          const effectiveDistSq = f.isLoot ? dSq * 0.25 : dSq;
           if (effectiveDistSq < minFoodDistSq) {
             minFoodDistSq = effectiveDistSq;
             nearestFood = f;
@@ -508,15 +621,17 @@ export class GameEngine {
     if (nearestFood) {
       const foodAngle = Math.atan2(nearestFood.y - head.y, nearestFood.x - head.x);
       bot.targetAngle = foodAngle;
-      // Boost towards large loot if long enough
-      bot.isBoosting = Boolean(nearestFood.isLoot) && bot.length > 35 && Math.random() < 0.35;
+      // Boost toward gold loot
+      bot.isBoosting = Boolean(nearestFood.isLoot) && bot.length > 30 && Math.random() < 0.4;
       return;
     }
 
-    // 4. Wander smoothly
-    if (Math.random() < 0.08) {
-      bot.targetAngle = bot.angle + (Math.random() - 0.5) * 1.2;
-      bot.isBoosting = bot.length > 50 && Math.random() < 0.08;
+    // ==========================================
+    // 5. NATURAL EXPLORATION & S-CURVES
+    // ==========================================
+    bot.isBoosting = false;
+    if (Math.random() < 0.05) {
+      bot.targetAngle = bot.angle + (Math.random() - 0.5) * 1.0;
     }
   }
 
