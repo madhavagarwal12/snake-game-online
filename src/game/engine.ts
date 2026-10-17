@@ -73,17 +73,17 @@ export class GameEngine {
       const skin = skinKeys[Math.floor(Math.random() * skinKeys.length)];
 
       let botLength: number;
-      if (i < 3) {
-        // 3 Giants / Arena Bosses
+      if (i < 2) {
+        // 2 Giants / Arena Bosses
         botLength = Math.floor(260 + Math.random() * 160);
-      } else if (i < 9) {
+      } else if (i < 8) {
         // 6 Large Veterans
         botLength = Math.floor(110 + Math.random() * 120);
-      } else if (i < 18) {
-        // 9 Medium Snakes
+      } else if (i < 16) {
+        // 8 Medium Snakes
         botLength = Math.floor(45 + Math.random() * 55);
       } else {
-        // Standard initial snakes
+        // 8 Standard initial snakes
         botLength = ARENA_CONFIG.INITIAL_LENGTH;
       }
 

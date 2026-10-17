@@ -22,7 +22,7 @@ export const ARENA_CONFIG = {
   // Environment
   DEFAULT_CAPACITY: 30,
   FOOD_COUNT: 350,
-  BOT_COUNT: 28,
+  BOT_COUNT: 24, // 24 bots + 1 player = exactly 25 snakes in the arena
   SPAWN_INVULNERABILITY_SEC: 3.0,
   
   // Grid partition size for spatial indexing (§6.7)
