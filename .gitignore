@@ -23,6 +23,9 @@ node_modules/
 .wrangler/
 .dev.vars
 
+# Supabase temp
+supabase/.temp/
+
 # Production
 /build
 /dist
