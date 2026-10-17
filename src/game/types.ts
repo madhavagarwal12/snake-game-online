@@ -10,7 +10,7 @@ export interface FoodPellet {
   radius: number;
   color: string;
   value: number; // length / coin contribution
-  isLoot?: boolean;
+  isLoot: boolean;
 }
 
 export interface SnakeSegment {

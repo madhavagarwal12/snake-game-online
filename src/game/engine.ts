@@ -509,7 +509,7 @@ export class GameEngine {
       const foodAngle = Math.atan2(nearestFood.y - head.y, nearestFood.x - head.x);
       bot.targetAngle = foodAngle;
       // Boost towards large loot if long enough
-      bot.isBoosting = nearestFood.isLoot && bot.length > 35 && Math.random() < 0.35;
+      bot.isBoosting = Boolean(nearestFood.isLoot) && bot.length > 35 && Math.random() < 0.35;
       return;
     }
 
