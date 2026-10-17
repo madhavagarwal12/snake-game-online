@@ -4,24 +4,25 @@ export const ARENA_CONFIG = {
   
   // Speed & Motion (PRD §6.1)
   BASE_SPEED: 180, // units per second
-  BOOST_SPEED: 300, // units per second
-  MAX_TURN_RATE: 4.5, // rad/s server-enforced max turn rate
+  BOOST_SPEED: 330, // units per second
+  MAX_TURN_RATE: 4.8, // rad/s snappy responsive turn rate
   
   // Collision & Sizing
   HEAD_RADIUS: 12,
   BODY_RADIUS: 10,
-  SEGMENT_SPACING: 8,
-  INITIAL_LENGTH: 15,
+  MAX_BODY_RADIUS: 18, // Large snakes get thicker!
+  SEGMENT_SPACING: 7.5,
+  INITIAL_LENGTH: 25, // Start with comfortable length to boost immediately
   
   // Boost mechanics
-  MIN_BOOST_LENGTH: 15,
-  BOOST_COST_PER_SEC: 2, // length lost per second
-  BOOST_PELLET_INTERVAL: 0.4, // seconds between dropping boost pellets
+  MIN_BOOST_LENGTH: 12, // Can boost down to 12 length
+  BOOST_COST_PER_SEC: 2.2, // length lost per second of boosting
+  BOOST_PELLET_INTERVAL: 0.25, // seconds between dropping boost pellets
   
   // Environment
   DEFAULT_CAPACITY: 30,
-  FOOD_COUNT: 300,
-  BOT_COUNT: 25,
+  FOOD_COUNT: 350,
+  BOT_COUNT: 28,
   SPAWN_INVULNERABILITY_SEC: 3.0,
   
   // Grid partition size for spatial indexing (§6.7)

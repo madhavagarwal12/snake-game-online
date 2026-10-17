@@ -25,6 +25,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const rendererRef = useRef<GameRenderer | null>(null);
   const requestRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(performance.now());
+  const onUpdateCoinsRef = useRef(onUpdateCoins);
+  onUpdateCoinsRef.current = onUpdateCoins;
 
   // Input state
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -40,16 +42,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     rank: 1,
   });
 
-  const [score, setScore] = useState(150);
-  const [length, setLength] = useState(15);
+  const [score, setScore] = useState(250);
+  const [length, setLength] = useState(25);
   const [kills, setKills] = useState(0);
   const [coins, setCoins] = useState(0);
   const [playerRank, setPlayerRank] = useState(1);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isBoosting, setIsBoosting] = useState(false);
 
-  const startGame = useCallback(() => {
+  // Restart or initialize match
+  const startMatch = useCallback(() => {
     setIsGameOver(false);
+    isBoostingRef.current = false;
+    setIsBoosting(false);
+
     if (!engineRef.current) {
       engineRef.current = new GameEngine();
     }
@@ -59,21 +65,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     engine.onPlayerDeath = (stats) => {
       setGameOverStats(stats);
       setIsGameOver(true);
-      onUpdateCoins(stats.coins);
+      isBoostingRef.current = false;
+      setIsBoosting(false);
+      onUpdateCoinsRef.current(stats.coins);
     };
 
     engine.onLeaderboardUpdate = (lb, pRank) => {
       setLeaderboard(lb);
       setPlayerRank(pRank);
     };
-  }, [playerName, playerSkin, onUpdateCoins]);
+  }, [playerName, playerSkin]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     rendererRef.current = new GameRenderer(canvas);
-    startGame();
+    startMatch();
 
     // Resize handler
     const handleResize = () => {
@@ -84,7 +92,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     handleResize();
     window.addEventListener("resize", handleResize);
 
-    // Main Game Loop (Delta-time based)
+    // Global pointer release listener so dragging mouse outside window doesn't get boost stuck
+    const handleGlobalPointerUp = () => {
+      isBoostingRef.current = false;
+      setIsBoosting(false);
+    };
+    window.addEventListener("pointerup", handleGlobalPointerUp);
+
+    // Main Game Loop
     const animate = (time: number) => {
       const dt = Math.min((time - lastTimeRef.current) / 1000, 0.1);
       lastTimeRef.current = time;
@@ -93,7 +108,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const renderer = rendererRef.current;
 
       if (engine && renderer && canvas) {
-        // Calculate steering angle from player screen center to mouse/touch position
+        // Calculate steering angle from screen center to mouse/touch position
         const centerX = window.innerWidth / 2;
         const centerY = window.innerHeight / 2;
         const targetAngle = Math.atan2(
@@ -105,7 +120,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         engine.update(dt);
         renderer.render(engine, window.innerWidth, window.innerHeight);
 
-        // Update player HUD stats
+        // Update player stats
         const player = engine.snakes.get(engine.playerSnakeId);
         if (player) {
           setLength(player.length);
@@ -124,34 +139,42 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     return () => {
       cancelAnimationFrame(requestRef.current);
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener("pointerup", handleGlobalPointerUp);
     };
-  }, [startGame]);
+  }, [startMatch]);
 
-  // Mouse / Pointer listeners
+  // Pointer listeners
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     mousePosRef.current = { x: e.clientX, y: e.clientY };
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.button === 0) {
+    // Both Left Click (0) and Right Click (2) trigger boost
+    if (e.button === 0 || e.button === 2) {
       isBoostingRef.current = true;
+      setIsBoosting(true);
     }
   };
 
   const handlePointerUp = () => {
     isBoostingRef.current = false;
+    setIsBoosting(false);
   };
 
-  // Keyboard controls (Space or Arrow keys)
+  // Keyboard controls: Space, Shift, or Enter to boost
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
+      if (e.code === "Space" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
+        e.preventDefault();
         isBoostingRef.current = true;
+        setIsBoosting(true);
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
+      if (e.code === "Space" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
+        e.preventDefault();
         isBoostingRef.current = false;
+        setIsBoosting(false);
       }
     };
 
@@ -170,6 +193,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
+        onContextMenu={(e) => e.preventDefault()}
         className="block h-full w-full cursor-crosshair touch-none"
       />
 
@@ -183,16 +207,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         isBoosting={isBoosting}
         onBoostStart={() => {
           isBoostingRef.current = true;
+          setIsBoosting(true);
         }}
         onBoostEnd={() => {
           isBoostingRef.current = false;
+          setIsBoosting(false);
         }}
       />
 
       {isGameOver && (
         <GameOverModal
           stats={gameOverStats}
-          onPlayAgain={startGame}
+          onPlayAgain={startMatch}
           onLobby={onExitToLobby}
         />
       )}

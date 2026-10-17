@@ -2,7 +2,8 @@
 
 import React from "react";
 import { LeaderboardEntry } from "@/game/types";
-import { Trophy, Coins, Flame, Skull } from "lucide-react";
+import { ARENA_CONFIG } from "@/game/config";
+import { Trophy, Coins, Flame, Skull, Zap } from "lucide-react";
 
 interface HUDProps {
   score: number;
@@ -27,11 +28,17 @@ export const HUD: React.FC<HUDProps> = ({
   onBoostStart,
   onBoostEnd,
 }) => {
+  const canBoost = length > ARENA_CONFIG.MIN_BOOST_LENGTH;
+  const boostPercent = Math.min(
+    100,
+    Math.max(0, ((length - ARENA_CONFIG.MIN_BOOST_LENGTH) / 40) * 100)
+  );
+
   return (
     <div className="pointer-events-none absolute inset-0 select-none overflow-hidden font-sans">
       {/* Top Left: Player Stats */}
       <div className="absolute left-4 top-4 flex flex-col gap-2">
-        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-2.5 shadow-xl backdrop-blur-md">
+        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/85 px-4 py-2.5 shadow-xl backdrop-blur-md">
           <div className="flex items-center gap-1.5 text-emerald-400">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Length</span>
             <span className="text-lg font-bold">{Math.floor(length)}</span>
@@ -49,10 +56,30 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
 
         {/* Rank indicator badge */}
-        <div className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/60 px-3 py-1.5 backdrop-blur-sm">
+        <div className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/70 px-3 py-1.5 backdrop-blur-sm">
           <Trophy className="h-3.5 w-3.5 text-amber-400" />
           <span className="text-xs font-medium text-slate-300">
             Your Rank: <strong className="text-white">#{playerRank}</strong>
+          </span>
+        </div>
+
+        {/* Boost indicator */}
+        <div
+          className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 transition-all duration-200 backdrop-blur-sm ${
+            isBoosting
+              ? "border-amber-500/50 bg-amber-500/20 text-amber-300 shadow-lg shadow-amber-500/20 scale-105"
+              : canBoost
+              ? "border-white/5 bg-slate-900/60 text-slate-400"
+              : "border-rose-500/30 bg-rose-500/10 text-rose-400"
+          }`}
+        >
+          <Zap className={`h-3.5 w-3.5 ${isBoosting ? "animate-bounce text-amber-400" : ""}`} />
+          <span className="text-xs font-semibold">
+            {isBoosting
+              ? "BOOSTING (330 u/s)"
+              : canBoost
+              ? "Boost Ready (Space / Click)"
+              : "Need more length to boost"}
           </span>
         </div>
       </div>
@@ -73,12 +100,16 @@ export const HUD: React.FC<HUDProps> = ({
               key={entry.id}
               className={`flex items-center justify-between rounded-lg px-2 py-1 text-xs transition-colors ${
                 entry.isPlayer
-                  ? "border border-emerald-500/30 bg-emerald-500/20 font-bold text-emerald-300"
+                  ? "border border-emerald-500/40 bg-emerald-500/20 font-bold text-emerald-300"
                   : "text-slate-300"
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <span className={`w-4 text-center font-mono text-[11px] ${entry.rank === 1 ? "text-amber-400 font-bold" : "text-slate-400"}`}>
+                <span
+                  className={`w-4 text-center font-mono text-[11px] ${
+                    entry.rank === 1 ? "text-amber-400 font-bold" : "text-slate-400"
+                  }`}
+                >
                   {entry.rank}
                 </span>
                 <span className="truncate">{entry.name}</span>
@@ -89,7 +120,7 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       </div>
 
-      {/* Mobile Controls: Boost Button Bottom-Right */}
+      {/* Mobile Boost Button Bottom-Right */}
       <div className="pointer-events-auto absolute bottom-6 right-6 md:hidden">
         <button
           onTouchStart={onBoostStart}
@@ -99,7 +130,9 @@ export const HUD: React.FC<HUDProps> = ({
           className={`flex h-20 w-20 items-center justify-center rounded-full border-2 shadow-2xl transition-transform active:scale-90 ${
             isBoosting
               ? "border-amber-400 bg-amber-500 text-slate-950 scale-105"
-              : "border-white/20 bg-slate-900/80 text-amber-400 backdrop-blur-md"
+              : canBoost
+              ? "border-white/20 bg-slate-900/80 text-amber-400 backdrop-blur-md"
+              : "border-slate-800 bg-slate-900/40 text-slate-600 opacity-60"
           }`}
         >
           <Flame className={`h-8 w-8 ${isBoosting ? "animate-pulse" : ""}`} />

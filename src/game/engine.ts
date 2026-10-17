@@ -2,11 +2,12 @@ import { ARENA_CONFIG, SKINS } from "./config";
 import { FoodPellet, LeaderboardEntry, Snake, SnakeSegment } from "./types";
 
 const BOT_NAMES = [
-  "ViperKing", "ShadowFang", "NeonStrike", "CobraKai", "Glither",
-  "SnekLord", "Python3", "Venom", "ApexPredator", "Constrictor",
-  "Noodle", "DangerRope", "Spaghetti", "Hydra", "BlackMamba",
-  "Titanoboa", "Rattler", "Basilisk", "Ouroboros", "Anaconda",
-  "SpeedySnek", "GhostSnake", "Solaris", "Draco", "Echo"
+  "Titanoboa", "ApexPredator", "BlackMamba", "ShadowFang", "NeonStrike",
+  "ViperKing", "CobraKai", "Glither", "Hydra", "Basilisk",
+  "SnekLord", "Python3", "Venom", "Constrictor", "Ouroboros",
+  "Noodle", "DangerRope", "Anaconda", "SpeedySnek", "GhostSnake",
+  "Solaris", "Draco", "Echo", "ThunderSnake", "Kaa",
+  "Riptide", "Jormungandr", "Kraken"
 ];
 
 const PELLET_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4"];
@@ -18,6 +19,7 @@ export class GameEngine {
   public nextId: number = 2;
   public nextFoodId: number = 1;
   public isRunning: boolean = false;
+  private playerDied: boolean = false;
   
   // Spatial Grid
   private foodGrid: Map<string, number[]> = new Map();
@@ -39,40 +41,84 @@ export class GameEngine {
     this.foodGrid.clear();
     this.nextId = 2;
     this.nextFoodId = 1;
+    this.playerDied = false;
 
-    // 1. Spawn Food
+    // 1. Spawn Standard Food
     for (let i = 0; i < ARENA_CONFIG.FOOD_COUNT; i++) {
       this.spawnRandomFood();
     }
 
-    // 2. Spawn Player
-    this.playerSnakeId = 1;
-    this.spawnSnake(this.playerSnakeId, playerName, false, playerSkin);
+    // 2. Spawn Scattered Battle Remnants (Loot clusters around the map so the arena feels actively underway!)
+    for (let cluster = 0; cluster < 8; cluster++) {
+      const cx = 200 + Math.random() * (ARENA_CONFIG.MAP_SIZE - 400);
+      const cy = 200 + Math.random() * (ARENA_CONFIG.MAP_SIZE - 400);
+      const orbCount = Math.floor(10 + Math.random() * 15);
+      for (let j = 0; j < orbCount; j++) {
+        const ox = cx + (Math.random() - 0.5) * 160;
+        const oy = cy + (Math.random() - 0.5) * 160;
+        this.spawnPelletAt(ox, oy, Math.floor(2 + Math.random() * 5), "#eab308", true);
+      }
+    }
 
-    // 3. Spawn Bots
-    for (let i = 0; i < ARENA_CONFIG.BOT_COUNT; i++) {
+    // 3. Spawn Player (Fresh start with comfortable length)
+    this.playerSnakeId = 1;
+    this.spawnSnake(this.playerSnakeId, playerName, false, playerSkin, ARENA_CONFIG.INITIAL_LENGTH);
+
+    // 4. Spawn Tiered Bots (So the game feels already on with giants, veterans, and small snakes!)
+    const botCount = ARENA_CONFIG.BOT_COUNT;
+    const skinKeys = Object.keys(SKINS);
+
+    for (let i = 0; i < botCount; i++) {
       const name = BOT_NAMES[i % BOT_NAMES.length];
-      const skinKeys = Object.keys(SKINS);
       const skin = skinKeys[Math.floor(Math.random() * skinKeys.length)];
-      this.spawnSnake(this.nextId++, name, true, skin);
+
+      let botLength: number;
+      if (i < 3) {
+        // 3 Giants / Arena Bosses (Top of leaderboard)
+        botLength = Math.floor(260 + Math.random() * 180); // 260 - 440
+      } else if (i < 10) {
+        // 7 Large Veterans
+        botLength = Math.floor(110 + Math.random() * 130); // 110 - 240
+      } else if (i < 20) {
+        // 10 Medium Snakes
+        botLength = Math.floor(45 + Math.random() * 55);   // 45 - 100
+      } else {
+        // Standard / Smaller snakes
+        botLength = Math.floor(22 + Math.random() * 20);   // 22 - 42
+      }
+
+      this.spawnSnake(this.nextId++, name, true, skin, botLength);
     }
 
     this.isRunning = true;
+    this.computeLeaderboard();
   }
 
-  public spawnSnake(id: number, name: string, isBot: boolean, skinId: string): Snake {
-    // Spawn away from walls
-    const margin = 200;
+  public spawnSnake(
+    id: number,
+    name: string,
+    isBot: boolean,
+    skinId: string,
+    initialLength: number = ARENA_CONFIG.INITIAL_LENGTH
+  ): Snake {
+    const margin = 250;
     const x = margin + Math.random() * (ARENA_CONFIG.MAP_SIZE - margin * 2);
     const y = margin + Math.random() * (ARENA_CONFIG.MAP_SIZE - margin * 2);
     const angle = Math.random() * Math.PI * 2;
 
     const segments: SnakeSegment[] = [];
-    for (let i = 0; i < ARENA_CONFIG.INITIAL_LENGTH; i++) {
-      segments.push({
-        x: x - Math.cos(angle) * (i * ARENA_CONFIG.SEGMENT_SPACING),
-        y: y - Math.sin(angle) * (i * ARENA_CONFIG.SEGMENT_SPACING),
-      });
+    const spacing = ARENA_CONFIG.SEGMENT_SPACING;
+
+    // Generate snake body with natural curve
+    let curX = x;
+    let curY = y;
+    let curAngle = angle;
+
+    for (let i = 0; i < initialLength; i++) {
+      segments.push({ x: curX, y: curY });
+      curX -= Math.cos(curAngle) * spacing;
+      curY -= Math.sin(curAngle) * spacing;
+      curAngle += (Math.random() - 0.5) * 0.05; // slight natural curvature
     }
 
     const snake: Snake = {
@@ -86,12 +132,12 @@ export class GameEngine {
       speed: ARENA_CONFIG.BASE_SPEED,
       isBoosting: false,
       segments,
-      length: ARENA_CONFIG.INITIAL_LENGTH,
+      length: initialLength,
       isAlive: true,
       invulnerableUntil: Date.now() + ARENA_CONFIG.SPAWN_INVULNERABILITY_SEC * 1000,
-      kills: 0,
+      kills: isBot && initialLength > 100 ? Math.floor(initialLength / 60) : 0,
       coinsEarned: 0,
-      survivedTime: 0,
+      survivedTime: isBot ? Math.floor(Math.random() * 120) : 0,
       boostTimer: 0,
       aiTimer: 0,
       aiState: {
@@ -108,9 +154,13 @@ export class GameEngine {
     if (!player || !player.isAlive) return;
 
     player.targetAngle = targetAngle;
-    player.isBoosting = boost && player.length > ARENA_CONFIG.MIN_BOOST_LENGTH;
-    if (player.isBoosting) {
-      player.invulnerableUntil = 0; // PRD: Boost immediately ends invulnerability
+    
+    // Boosting is permitted as long as length > MIN_BOOST_LENGTH (12)
+    const canBoost = boost && player.length > ARENA_CONFIG.MIN_BOOST_LENGTH;
+    player.isBoosting = canBoost;
+
+    if (canBoost) {
+      player.invulnerableUntil = 0; // PRD §6.6: Boost cancels invulnerability
     }
   }
 
@@ -130,7 +180,7 @@ export class GameEngine {
         this.updateBotAI(snake, dt, now);
       }
 
-      // Turn clamping (PRD §6.1: ~4.5 rad/s)
+      // Smooth turning clamped by MAX_TURN_RATE
       let diff = snake.targetAngle - snake.angle;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -138,18 +188,18 @@ export class GameEngine {
       const turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
       snake.angle += turn;
 
-      // Boost calculation
+      // Speed & Boost State
       if (snake.isBoosting && snake.length > ARENA_CONFIG.MIN_BOOST_LENGTH) {
         snake.speed = ARENA_CONFIG.BOOST_SPEED;
         snake.length -= ARENA_CONFIG.BOOST_COST_PER_SEC * dt;
         snake.boostTimer += dt;
 
-        // Drop pellet on boost
+        // Drop mass pellets when boosting
         if (snake.boostTimer >= ARENA_CONFIG.BOOST_PELLET_INTERVAL) {
           snake.boostTimer = 0;
           const tail = snake.segments[snake.segments.length - 1];
           if (tail) {
-            this.spawnPelletAt(tail.x, tail.y, 1, "#f59e0b", false);
+            this.spawnPelletAt(tail.x, tail.y, 1.2, "#f59e0b", false);
           }
         }
       } else {
@@ -161,7 +211,7 @@ export class GameEngine {
       snake.head.x += Math.cos(snake.angle) * snake.speed * dt;
       snake.head.y += Math.sin(snake.angle) * snake.speed * dt;
 
-      // Check Wall Collision (PRD §6.6: Wall = death, no wraparound)
+      // Wall Collision (PRD §6.6: Wall = death, no wraparound)
       if (
         snake.head.x < 0 ||
         snake.head.x > ARENA_CONFIG.MAP_SIZE ||
@@ -179,10 +229,10 @@ export class GameEngine {
       this.checkFoodEaten(snake);
     }
 
-    // 2. Snake vs Snake Collisions (PRD §6.6)
+    // 2. Collisions
     this.checkSnakeCollisions(now);
 
-    // 3. Maintain Bot Population
+    // 3. Maintain Bot Population with varied sizes
     let liveBots = 0;
     for (const s of this.snakes.values()) {
       if (s.isBot && s.isAlive) liveBots++;
@@ -191,7 +241,9 @@ export class GameEngine {
       const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
       const skinKeys = Object.keys(SKINS);
       const skin = skinKeys[Math.floor(Math.random() * skinKeys.length)];
-      this.spawnSnake(this.nextId++, name, true, skin);
+      // Varied respawn length so new bots aren't all small
+      const respawnLength = Math.floor(30 + Math.random() * 90);
+      this.spawnSnake(this.nextId++, name, true, skin, respawnLength);
     }
 
     // 4. Replenish Food
@@ -199,8 +251,8 @@ export class GameEngine {
       this.spawnRandomFood();
     }
 
-    // 5. Update Leaderboard (2 Hz / twice per second)
-    if (now - this.lastLeaderboardTime > 500) {
+    // 5. Update Leaderboard
+    if (now - this.lastLeaderboardTime > 400) {
       this.lastLeaderboardTime = now;
       this.computeLeaderboard();
     }
@@ -208,9 +260,8 @@ export class GameEngine {
 
   private updateSnakeBody(snake: Snake) {
     const spacing = ARENA_CONFIG.SEGMENT_SPACING;
-    const requiredSegments = Math.max(ARENA_CONFIG.INITIAL_LENGTH, Math.floor(snake.length));
+    const requiredSegments = Math.max(ARENA_CONFIG.MIN_BOOST_LENGTH, Math.floor(snake.length));
 
-    // Head is segment 0
     let prev = snake.head;
     const newSegments: SnakeSegment[] = [{ x: prev.x, y: prev.y }];
 
@@ -229,13 +280,13 @@ export class GameEngine {
       prev = current;
     }
 
-    // Add segments if snake grew
+    // Grow smoothly
     while (newSegments.length < requiredSegments) {
       const last = newSegments[newSegments.length - 1];
       newSegments.push({ x: last.x, y: last.y });
     }
 
-    // Truncate segments if snake shrank
+    // Truncate if shrank from boost
     if (newSegments.length > requiredSegments) {
       newSegments.length = requiredSegments;
     }
@@ -245,7 +296,8 @@ export class GameEngine {
 
   private checkFoodEaten(snake: Snake) {
     const head = snake.head;
-    const eatRadius = ARENA_CONFIG.HEAD_RADIUS + 12;
+    const snakeRadius = this.getSnakeRadius(snake.length);
+    const eatRadius = snakeRadius + 15;
 
     const cellX = Math.floor(head.x / this.cellSize);
     const cellY = Math.floor(head.y / this.cellSize);
@@ -263,16 +315,19 @@ export class GameEngine {
 
           const distSq = (food.x - head.x) ** 2 + (food.y - head.y) ** 2;
           if (distSq < eatRadius * eatRadius) {
-            // Eat food
-            snake.length += food.value * 0.35;
+            snake.length += food.value * 0.4;
             if (food.isLoot) {
-              snake.coinsEarned += Math.max(1, Math.floor(food.value * 0.2));
+              snake.coinsEarned += Math.max(1, Math.floor(food.value * 0.3));
             }
             this.removeFood(fid, key);
           }
         }
       }
     }
+  }
+
+  public getSnakeRadius(length: number): number {
+    return Math.min(ARENA_CONFIG.MAX_BODY_RADIUS, ARENA_CONFIG.BODY_RADIUS + Math.sqrt(length) * 0.35);
   }
 
   private checkSnakeCollisions(now: number) {
@@ -283,8 +338,9 @@ export class GameEngine {
       if (!a.isAlive) continue;
 
       const aInvulnerable = now < a.invulnerableUntil;
+      const aRadius = this.getSnakeRadius(a.length);
 
-      // 1. Head-to-Head with other snakes (PRD §6.6: longer snake survives, equal both die)
+      // 1. Head-to-Head Collision
       for (let j = i + 1; j < liveSnakes.length; j++) {
         const b = liveSnakes[j];
         if (!b.isAlive) continue;
@@ -292,8 +348,9 @@ export class GameEngine {
         const bInvulnerable = now < b.invulnerableUntil;
         if (aInvulnerable || bInvulnerable) continue;
 
+        const bRadius = this.getSnakeRadius(b.length);
         const headDistSq = (a.head.x - b.head.x) ** 2 + (a.head.y - b.head.y) ** 2;
-        const minDist = ARENA_CONFIG.HEAD_RADIUS * 2;
+        const minDist = aRadius + bRadius;
 
         if (headDistSq < minDist * minDist) {
           if (a.length > b.length) {
@@ -303,7 +360,6 @@ export class GameEngine {
             b.kills++;
             this.killSnake(a, b);
           } else {
-            // Equal: both die
             this.killSnake(a, null);
             this.killSnake(b, null);
           }
@@ -312,18 +368,19 @@ export class GameEngine {
 
       if (!a.isAlive || aInvulnerable) continue;
 
-      // 2. Head into other snake's body (PRD §6.6: moving head dies)
+      // 2. Head into Body of Other Snakes
       for (const other of liveSnakes) {
         if (!other.isAlive || other.id === a.id) continue;
-        if (now < other.invulnerableUntil) continue; // Passes through invulnerable
+        if (now < other.invulnerableUntil) continue;
 
-        const hitRadius = ARENA_CONFIG.HEAD_RADIUS + ARENA_CONFIG.BODY_RADIUS - 3;
-        const hitRadiusSq = hitRadius * hitRadius;
+        const otherRadius = this.getSnakeRadius(other.length);
+        const hitDist = aRadius + otherRadius - 4;
+        const hitDistSq = hitDist * hitDist;
 
         for (let sIdx = 1; sIdx < other.segments.length; sIdx++) {
           const seg = other.segments[sIdx];
           const distSq = (a.head.x - seg.x) ** 2 + (a.head.y - seg.y) ** 2;
-          if (distSq < hitRadiusSq) {
+          if (distSq < hitDistSq) {
             other.kills++;
             this.killSnake(a, other);
             break;
@@ -339,28 +396,29 @@ export class GameEngine {
     if (!victim.isAlive) return;
     victim.isAlive = false;
 
-    // PRD §6.6: Loot on death - Every 3rd segment becomes an orb, capped at <= 60
+    // Drop loot orbs along the body
     const dropEvery = 3;
     let dropped = 0;
     for (let i = 0; i < victim.segments.length && dropped < 60; i += dropEvery) {
       const seg = victim.segments[i];
-      const orbValue = Math.min(5, Math.max(1, Math.floor(victim.length / 10)));
+      const orbValue = Math.min(6, Math.max(1, Math.floor(victim.length / 15)));
       this.spawnPelletAt(seg.x, seg.y, orbValue, "#eab308", true);
       dropped++;
     }
 
-    // If killer is player or victim is player, trigger stats
     if (killer && killer.id === this.playerSnakeId) {
       killer.coinsEarned += 10;
     }
 
-    if (victim.id === this.playerSnakeId) {
+    // Trigger player death ONCE without automatic reset
+    if (victim.id === this.playerSnakeId && !this.playerDied) {
+      this.playerDied = true;
       const rank = this.getPlayerRank();
       if (this.onPlayerDeath) {
         this.onPlayerDeath({
           length: Math.floor(victim.length),
           kills: victim.kills,
-          coins: victim.coinsEarned + Math.min(20, Math.floor(victim.survivedTime / 30)),
+          coins: victim.coinsEarned + Math.min(25, Math.floor(victim.survivedTime / 25)),
           survivedTime: Math.floor(victim.survivedTime),
           rank,
         });
@@ -370,7 +428,7 @@ export class GameEngine {
 
   private updateBotAI(bot: Snake, dt: number, now: number) {
     bot.aiTimer += dt;
-    if (bot.aiTimer < 0.15) return; // PRD §6.4: Bot logic runs at ~5 Hz
+    if (bot.aiTimer < 0.15) return;
     bot.aiTimer = 0;
 
     const head = bot.head;
@@ -393,7 +451,7 @@ export class GameEngine {
     }
 
     // 2. Obstacle / Snake Avoidance (look ahead)
-    const lookAheadDist = bot.isBoosting ? 140 : 80;
+    const lookAheadDist = bot.isBoosting ? 160 : 100;
     const probeX = head.x + Math.cos(bot.angle) * lookAheadDist;
     const probeY = head.y + Math.sin(bot.angle) * lookAheadDist;
 
@@ -402,11 +460,12 @@ export class GameEngine {
 
     for (const other of this.snakes.values()) {
       if (!other.isAlive || other.id === bot.id) continue;
+      const otherRadius = this.getSnakeRadius(other.length);
+
       for (const seg of other.segments) {
         const dSq = (probeX - seg.x) ** 2 + (probeY - seg.y) ** 2;
-        if (dSq < (ARENA_CONFIG.BODY_RADIUS + 30) ** 2) {
+        if (dSq < (otherRadius + 40) ** 2) {
           obstacleDetected = true;
-          // Turn perpendicular to avoid collision
           steerAwayAngle = bot.angle + (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 2);
           break;
         }
@@ -420,9 +479,9 @@ export class GameEngine {
       return;
     }
 
-    // 3. Search for nearby food
+    // 3. Search for nearby food (prioritizing loot orbs)
     let nearestFood: FoodPellet | null = null;
-    let minFoodDistSq = 250 ** 2;
+    let minFoodDistSq = 320 ** 2;
 
     const cellX = Math.floor(head.x / this.cellSize);
     const cellY = Math.floor(head.y / this.cellSize);
@@ -436,8 +495,10 @@ export class GameEngine {
           const f = this.foods.get(fid);
           if (!f) continue;
           const dSq = (head.x - f.x) ** 2 + (head.y - f.y) ** 2;
-          if (dSq < minFoodDistSq) {
-            minFoodDistSq = dSq;
+          // Loot orbs are given higher priority by artificially reducing their effective distance
+          const effectiveDistSq = f.isLoot ? dSq * 0.4 : dSq;
+          if (effectiveDistSq < minFoodDistSq) {
+            minFoodDistSq = effectiveDistSq;
             nearestFood = f;
           }
         }
@@ -447,15 +508,15 @@ export class GameEngine {
     if (nearestFood) {
       const foodAngle = Math.atan2(nearestFood.y - head.y, nearestFood.x - head.x);
       bot.targetAngle = foodAngle;
-      // Boost if it's large loot orb
-      bot.isBoosting = nearestFood.isLoot && bot.length > 25 && Math.random() < 0.25;
+      // Boost towards large loot if long enough
+      bot.isBoosting = nearestFood.isLoot && bot.length > 35 && Math.random() < 0.35;
       return;
     }
 
     // 4. Wander smoothly
     if (Math.random() < 0.08) {
       bot.targetAngle = bot.angle + (Math.random() - 0.5) * 1.2;
-      bot.isBoosting = bot.length > 30 && Math.random() < 0.05;
+      bot.isBoosting = bot.length > 50 && Math.random() < 0.08;
     }
   }
 
