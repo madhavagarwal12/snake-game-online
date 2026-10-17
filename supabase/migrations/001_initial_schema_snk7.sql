@@ -3,11 +3,10 @@
 -- Isolated namespace suffix: _snk7
 -- =====================================================
 
--- 1. PROFILES
+-- 1. PROFILES TABLE
 create table if not exists public.profiles_snk7 (
   id uuid references auth.users on delete cascade primary key,
-  username text not null default 'Snake'
-    check (char_length(username) between 2 and 16),
+  username text not null default 'Snake' check (char_length(username) between 2 and 16),
   coins integer not null default 0 check (coins >= 0),
   equipped_skin text not null default 'classic_green',
   unlocked_skins text[] not null default array['classic_green'],
@@ -23,21 +22,7 @@ drop policy if exists "own profile select" on public.profiles_snk7;
 create policy "own profile select" on public.profiles_snk7
   for select using (auth.uid() = id);
 
-create or replace function public.handle_new_user_snk7()
-returns trigger language plpgsql security definer set search_path = '' as $$
-begin
-  insert into public.profiles_snk7 (id, username)
-  values (new.id, 'Snake_' || substr(new.id::text, 1, 5))
-  on conflict (id) do nothing;
-  return new;
-end; $$;
-
-drop trigger if exists on_auth_user_created_snk7 on auth.users;
-create trigger on_auth_user_created_snk7
-  after insert on auth.users
-  for each row execute procedure public.handle_new_user_snk7();
-
--- 2. ROOMS + RESERVATIONS
+-- 2. ROOMS TABLE
 create table if not exists public.rooms_snk7 (
   room_id text primary key,
   human_count integer not null default 0 check (human_count >= 0),
@@ -48,6 +33,7 @@ create table if not exists public.rooms_snk7 (
 );
 alter table public.rooms_snk7 enable row level security;
 
+-- 3. ROOM RESERVATIONS TABLE
 create table if not exists public.room_reservations_snk7 (
   ticket_id uuid primary key default gen_random_uuid(),
   room_id text not null references public.rooms_snk7(room_id) on delete cascade,
@@ -58,6 +44,35 @@ create table if not exists public.room_reservations_snk7 (
 create index if not exists idx_room_reservations_snk7 on public.room_reservations_snk7 (room_id, expires_at);
 alter table public.room_reservations_snk7 enable row level security;
 
+-- 4. MATCH PAYOUTS TABLE
+create table if not exists public.match_payouts_snk7 (
+  session_id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  room_id text not null,
+  requested integer not null,
+  granted integer not null,
+  survived_seconds integer not null,
+  created_at timestamptz not null default now()
+);
+alter table public.match_payouts_snk7 enable row level security;
+
+-- 5. TRIGGER ON NEW AUTH USER
+create or replace function public.handle_new_user_snk7()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.profiles_snk7 (id, username)
+  values (new.id, 'Snake_' || substr(new.id::text, 1, 5))
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created_snk7 on auth.users;
+create trigger on_auth_user_created_snk7
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user_snk7();
+
+-- 6. MATCHMAKING FUNCTION
 create or replace function public.find_or_create_room_snk7(p_user uuid)
 returns text language plpgsql security definer set search_path = '' as $$
 declare
@@ -84,8 +99,10 @@ begin
 
   insert into public.room_reservations_snk7 (room_id, user_id) values (v_room, p_user);
   return v_room;
-end; $$;
+end;
+$$;
 
+-- 7. REPORT ROOM FUNCTION
 create or replace function public.report_room_snk7(p_room text, p_humans integer)
 returns void language sql security definer set search_path = '' as $$
   update public.rooms_snk7
@@ -95,25 +112,19 @@ returns void language sql security definer set search_path = '' as $$
   where room_id = p_room;
 $$;
 
+-- 8. CLEANUP ROOMS FUNCTION
 create or replace function public.cleanup_rooms_snk7()
 returns void language sql security definer set search_path = '' as $$
   delete from public.rooms_snk7 where last_heartbeat < now() - interval '2 minutes';
 $$;
 
--- 3. MATCH PAYOUTS
-create table if not exists public.match_payouts_snk7 (
-  session_id uuid primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  room_id text not null,
-  requested integer not null,
-  granted integer not null,
-  survived_seconds integer not null,
-  created_at timestamptz not null default now()
-);
-alter table public.match_payouts_snk7 enable row level security;
-
+-- 9. GRANT MATCH COINS FUNCTION
 create or replace function public.grant_match_coins_snk7(
-  p_user uuid, p_session uuid, p_room text, p_amount integer, p_survived integer
+  p_user uuid,
+  p_session uuid,
+  p_room text,
+  p_amount integer,
+  p_survived integer
 ) returns integer language plpgsql security definer set search_path = '' as $$
 declare
   v_match_cap  constant integer := 150;
@@ -142,9 +153,10 @@ begin
   values (p_session, p_user, p_room, p_amount, v_grant, p_survived);
 
   return v_grant;
-end; $$;
+end;
+$$;
 
--- 4. BUY SKIN
+-- 10. BUY SKIN FUNCTION
 create or replace function public.buy_skin_snk7(p_user uuid, p_skin text, p_cost integer)
 returns boolean language plpgsql security definer set search_path = '' as $$
 begin
@@ -156,9 +168,10 @@ begin
      and coins >= p_cost
      and not (p_skin = any(unlocked_skins));
   return found;
-end; $$;
+end;
+$$;
 
--- 5. ACCESS CONTROL (service_role only)
+-- 11. ACCESS CONTROL (service_role only)
 revoke execute on function public.find_or_create_room_snk7(uuid)                     from public, anon, authenticated;
 revoke execute on function public.report_room_snk7(text, integer)                    from public, anon, authenticated;
 revoke execute on function public.cleanup_rooms_snk7()                               from public, anon, authenticated;
